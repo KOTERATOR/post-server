@@ -1,15 +1,45 @@
-#include "Arduino.h"
-#include "WiFi.h"
 
-const char * ssid = "VLADCROCODILE";
-const char * pass = "32222228";
+#include "Arduino.h"
+#include "TemperatureSensor.h"
+#include "WiFi.h"
+#include "ESPAsyncWebServer.h"
+#include "List.h"
+
+const char * ssid = "CROCS_NETWORK";
+const char * pass = "NOTAVLAD";
+
+List<TemperatureSensor*> sensors = List<TemperatureSensor*>();
 
 String header;
-WiFiServer server(80);
+AsyncWebServer server(80);
+
+void storeSensorValue(String mac, float temp)
+{
+    TemperatureSensor * sensor = nullptr;
+    for(int i = 0; i < sensors.size(); i++)
+    {
+        if(sensors[i]->getMAC() == mac)
+        {
+            sensor = sensors[i];
+        }
+    }
+
+    if(sensor == nullptr)
+    {
+        sensor = new TemperatureSensor(mac);
+        sensors.add(sensor);
+    }
+
+    if(sensor != nullptr)
+    {
+        sensor->setTemp(temp);
+    }
+}
 
 void setup()
 {
     Serial.begin(115200);
+    
     Serial.println("STARTED");
     Serial.println("Setting AP...");
     WiFi.softAP(ssid, pass);
@@ -17,16 +47,46 @@ void setup()
     Serial.print("AP IP: ");
     Serial.println(IP);
 
+    server.on("/sendtemp", HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        storeSensorValue(request->getParam(0)->value(), request->getParam(1)->value().toFloat());
+        Serial.println("/sendtemp");
+        request->send(200, "text/plain", "message received");
+    });
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        String data = "<html><head><script> function getData() { var xmlHttp = new XMLHttpRequest(); xmlHttp.open(\"GET\", \"http://192.168.4.1/getdata\", false); xmlHttp.send(null); return xmlHttp.responseText; }</script></head><body><button onclick=alert(getData())>Get Data</button></body></html>";
+        request->send(200, "text/html", data);
+    });
+
+    server.on("/getdata",HTTP_GET, [](AsyncWebServerRequest * request)
+    {
+        String data = "Current data:\r\n";
+        for(int i = 0; i < sensors.size(); i++)
+        {
+            if(sensors[i] != nullptr)
+            {
+                data += sensors[i]->getMAC();
+                data += ": ";
+                data += sensors[i]->getTemp();
+                data += "\r\n";
+            }
+        }
+        request->send(200, "text/plain", data);
+    });
+
     server.begin();
 }
 
 void loop()
 {
-    WiFiClient client = server.available();
+    
+    /*WiFiClient client = server.available();
     if(client)
     {
         Serial.println("New client");
         String currentLine = "";
+        
         while (client.connected()) {            // loop while the client's connected
         if (client.available())
         {             // if there's bytes to read from the client,
@@ -67,5 +127,5 @@ void loop()
         client.stop();
         Serial.println("Client disconnected.");
         Serial.println("");
-    }
+    }*/
 }
